@@ -1,0 +1,2 @@
+Reacher.app.zip filter=lfs diff=lfs merge=lfs -text
+Reacher_Linux.zip filter=lfs diff=lfs merge=lfs -text
