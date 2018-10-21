@@ -58,7 +58,11 @@ def get_state(env_info, use_visual):
 
 
 def build_environment(path):
-    directory = os.path.dirname(path)
+    macos = path.endswith('.app')
+    if macos:
+        directory = path
+    else:
+        directory = os.path.dirname(path)
     if not os.path.exists(directory):
         zipped = directory + '.zip'
         if os.path.exists(zipped):
@@ -67,8 +71,13 @@ def build_environment(path):
                 zfp.extractall()
         else:
             raise Exception('Unable to proceed. Cannot find environment.')
+    if macos:
+        for root, _, files in os.walk(path):
+            for fn in files:
+                os.chmod(os.path.join(root, fn), 0o755)
     os.chmod(path, 0o755)
     return UnityEnvironment(file_name=path)
+
 
 def get_executable_path():
     parent = os.path.dirname(here)
@@ -88,9 +97,11 @@ def get_executable_path():
         logging.error('Unsupported platform!')
         raise ValueError('Unsupported platform')
 
+
 def print_source(obj):
     source = inspect.getsource(obj)
     display(Markdown('```python\n' + source + '\n```'))
+
 
 def load_environment():
     path = get_executable_path()

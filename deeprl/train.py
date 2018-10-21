@@ -14,7 +14,7 @@ import numpy as np
 
 from .agent import DoubleDQNAgent as Agent, BUFFER_SIZE
 from .util import load_environment, UnityEnvironmentWrapper, get_state
-from .util import STACK_SIZE, FRAME_SKIP
+from .util import FRAME_SKIP
 
 BATCH = 0
 CHANNELS = 1
