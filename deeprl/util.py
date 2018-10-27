@@ -48,12 +48,15 @@ def rgb2gray(img):
         raise ValueError('Image in some color space not known')
 
 
-def get_state(env_info, use_visual):
+def get_state(env_info, use_visual=False, n_agents=1):
     if use_visual:
         state = env_info.visual_observations[0]
         state = rgb2gray(state).transpose(0, 3, 1, 2)
     else:
-        state = env_info.vector_observations[0]
+        if n_agents > 1:
+            state = env_info.vector_observations
+        else:
+            state = env_info.vector_observations[0]
     return state
 
 
