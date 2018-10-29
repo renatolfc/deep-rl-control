@@ -12,7 +12,7 @@ from collections import deque
 import torch
 import numpy as np
 
-from .agent import DDPGAgent as Agent, BUFFER_SIZE
+from .agent import DDPGAgent as Agent, BUFFER_SIZE, BATCH_SIZE
 from .util import load_environment, UnityEnvironmentWrapper, get_state
 from .util import FRAME_SKIP
 
@@ -35,8 +35,8 @@ def reset_deque(state, stack_size=STACK_SIZE):
     return state_deque
 
 
-def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint-%d.pth', load_checkpoint=False,
-         update_every=10, n_updates=10, solution_threshold=30.0):
+def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint.pth', load_checkpoint=False,
+         update_every=2, n_updates=1, solution_threshold=30.0):
     '''Runs DDPG in an environment'''
 
     brain_name = env.brain_names[0]
@@ -50,23 +50,22 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint-%d.pth', loa
 
     if load_checkpoint:
         try:
-            agents = [Agent.load(checkpointfn) for _ in range(n_agents)]
+            agent = Agent.load(checkpointfn)
         except Exception:
             logging.exception('Failed to load checkpoint. Ignoring...')
-            agents = [Agent(state_size, action_size, 0) for _ in range(n_agents)]
+            agent = Agent(state_size, action_size, 0)
     else:
-        agents = [Agent(state_size, action_size, 0) for _ in range(n_agents)]
+        agent = Agent(state_size, action_size, 0)
 
     for i_episode in range(1, n_episodes + 1):
-        for agent in agents:
-            agent.episode += 1
 
+        agent.episode += 1
         env_info = env.reset(train_mode=True)[brain_name]
         states = get_state(env_info, n_agents=n_agents)
         scores = np.zeros(n_agents)
 
         for t in range(max_t):
-            actions = np.vstack([agent.act(state) for agent, state in zip(agents, states)])
+            actions = np.vstack([agent.act(state) for state in states])
 
             env_info = env.step(actions)[brain_name]
             next_states = get_state(env_info, n_agents=n_agents)
@@ -74,13 +73,13 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint-%d.pth', loa
             dones = env_info.local_done
 
             for i in range(n_agents):
-                agents[i].step(states[i], actions[i], rewards[i], next_states[i], dones[i], learning=False)
+                agent.step(states[i], actions[i], rewards[i], next_states[i], dones[i], learning=False)
 
-            if t and t % update_every == 0:
+            if len(agent.memory) > BATCH_SIZE and t and t % update_every == 0:
                 for i in range(n_agents):
                     for j in range(n_updates):
-                        experiences = agents[i].memory.sample()
-                        agents[i].learn(experiences)
+                        experiences = agent.memory.sample()
+                        agent.learn(experiences)
 
             states = next_states
             scores += rewards
@@ -88,24 +87,25 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint-%d.pth', loa
             if any(dones):
                 break
 
-        [agent.scores.append(score) for agent, score in zip(agents, scores)]
+        # Store scores for all agents
+        agent.scores.append(scores)
 
-        avg_score = np.mean([agent.scores[-100:] for agent in agents])
+        avg_score = np.mean(agent.scores[-100:])
 
         logging.debug(
-            'Episode {}\tAverage Score: {:.2f}\tCurrent (avg) Score: {:.2f}'
+            'Episode {}\tAverage Score: {:.3f}\tCurrent (avg) Score: {:.3f}'
                 .format(i_episode, avg_score, np.mean(scores))
         )
 
         if i_episode % 100 == 0:
             logging.info(
-                'Episode {}\tAverage Score: {:.2f}'
+                'Episode {}\tAverage Score: {:.3f}'
                     .format(i_episode, avg_score)
             )
             logging.info(
                 'Saving checkpoint file...'
             )
-            [agent.save(checkpointfn % i) for i, agent in enumerate(agents)]
+            agent.save(checkpointfn)
 
         if np.mean(avg_score) >= solution_threshold:
             logging.info(
@@ -115,10 +115,11 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint-%d.pth', loa
             logging.info(
                 'Saving checkpoint file at %s', checkpointfn
             )
-            [agent.save(checkpointfn % i) for i, agent in enumerate(agents)]
-            break
+            agent.save(checkpointfn)
+            if i_episode > 100:
+                break
 
-    return agents
+    return agent
 
 
 def dqn(env, n_episodes=1001, max_t=1200 * FRAME_SKIP, eps_start=1.0,
@@ -217,12 +218,12 @@ def dqn(env, n_episodes=1001, max_t=1200 * FRAME_SKIP, eps_start=1.0,
         agent.episode += 1
 
         logging.debug(
-            'Episode {}\tAverage Score: {:.2f}\tCurrent Score: {:.2f}\tEpsilon: {:.4f}'
+            'Episode {}\tAverage Score: {:.3f}\tCurrent Score: {:.3f}\tEpsilon: {:.4f}'
             .format(i_episode, np.mean(agent.scores[-100:]), score, eps)
         )
         if (i_episode + 1) % 100 == 0:
             logging.info(
-                'Episode {}\tAverage Score: {:.2f}'
+                'Episode {}\tAverage Score: {:.3f}'
                 .format(i_episode, np.mean(agent.scores[-100:]))
             )
             logging.info(
