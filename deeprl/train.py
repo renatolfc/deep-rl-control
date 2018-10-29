@@ -50,22 +50,23 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint.pth', load_c
 
     if load_checkpoint:
         try:
-            agent = Agent.load(checkpointfn)
+            agents = [Agent.load(checkpointfn) for _ in range(n_agents)]
         except Exception:
             logging.exception('Failed to load checkpoint. Ignoring...')
-            agent = Agent(state_size, action_size, 0)
+            agents = [Agent(state_size, action_size, 0) for _ in range(n_agents)]
     else:
-        agent = Agent(state_size, action_size, 0)
+        agents = [Agent(state_size, action_size, 0) for _ in range(n_agents)]
 
     for i_episode in range(1, n_episodes + 1):
+        for agent in agents:
+            agent.episode += 1
 
-        agent.episode += 1
         env_info = env.reset(train_mode=True)[brain_name]
         states = get_state(env_info, n_agents=n_agents)
         scores = np.zeros(n_agents)
 
         for t in range(max_t):
-            actions = np.vstack([agent.act(state) for state in states])
+            actions = np.vstack([agent.act(state) for agent, state in zip(agents, states)])
 
             env_info = env.step(actions)[brain_name]
             next_states = get_state(env_info, n_agents=n_agents)
@@ -73,13 +74,13 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint.pth', load_c
             dones = env_info.local_done
 
             for i in range(n_agents):
-                agent.step(states[i], actions[i], rewards[i], next_states[i], dones[i], learning=False)
+                agents[i].step(states[i], actions[i], rewards[i], next_states[i], dones[i], learning=False)
 
             if len(agent.memory) > BATCH_SIZE and t and t % update_every == 0:
                 for i in range(n_agents):
                     for j in range(n_updates):
-                        experiences = agent.memory.sample()
-                        agent.learn(experiences)
+                        experiences = agents[i].memory.sample()
+                        agents[i].learn(experiences)
 
             states = next_states
             scores += rewards
@@ -88,9 +89,9 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint.pth', load_c
                 break
 
         # Store scores for all agents
-        agent.scores.append(scores)
+        [agent.scores.append(score) for agent, score in zip(agents, scores)]
 
-        avg_score = np.mean(agent.scores[-100:])
+        avg_score = np.mean([agent.scores[-100:] for agent in agents])
 
         logging.debug(
             'Episode {}\tAverage Score: {:.3f}\tCurrent (avg) Score: {:.3f}'
@@ -105,7 +106,7 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint.pth', load_c
             logging.info(
                 'Saving checkpoint file...'
             )
-            agent.save(checkpointfn)
+            [agent.save(checkpointfn % i) for i, agent in enumerate(agents)]
 
         if np.mean(avg_score) >= solution_threshold:
             logging.info(
@@ -115,11 +116,11 @@ def ddpg(env, n_episodes=2000, max_t=1000, checkpointfn='checkpoint.pth', load_c
             logging.info(
                 'Saving checkpoint file at %s', checkpointfn
             )
-            agent.save(checkpointfn)
+            [agent.save(checkpointfn % i) for i, agent in enumerate(agents)]
             if i_episode > 100:
                 break
 
-    return agent
+    return agents
 
 
 def dqn(env, n_episodes=1001, max_t=1200 * FRAME_SKIP, eps_start=1.0,
@@ -257,7 +258,7 @@ def reload_process():
 def main():
     parser = argparse.ArgumentParser(description='Trains a learning agent')
     parser.add_argument('--checkpoint', dest='checkpoint', action='store',
-                        default='checkpoint.pth')
+                        default='checkpoint-%d.pth')
     parser.add_argument('--load-checkpoint', dest='load_chkpt', action='store_true',
                         default=False)
     args = parser.parse_args()
